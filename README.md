@@ -47,11 +47,14 @@ Explain briefly what files are found where
 
 ```bash
 repository
-├── src                          ## source code of the package itself
+├── src
+    ├── data/                         ## source code of the package itself
 ├── scripts                      ## scripts, if needed
 ├── docs                         ## If needed, documentation   
 ├── README.md                    ## You are here
 ├── requirements.yml             ## If you use conda
+│── requirements.txt
+│── .gitignore
 ```
 
 <a name="installation"></a>
@@ -61,12 +64,15 @@ repository
 Provide sufficient instructions to reproduce and install your project. 
 Provide _exact_ versions, test on CSIL or reference workstations.
 
+Installing Dependencies:
 ```bash
 git clone $THISREPO
 cd $THISREPO
-conda env create -f requirements.yml
-conda activate amazing
+python -m venv venv
+source venv/bin/activate #(on MAC)
+pip install -r requirements.txt
 ```
+
 
 <a name="repro"></a>
 ## 3. Reproduction
