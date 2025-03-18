@@ -2,11 +2,11 @@ import pandas as pd
 from PIL import Image
 from pathlib import Path
 
-ROOT_PATH = Path('../data/boneage-training-dataset')
-SAVE_PATH = Path('../data/processed/training-set')
+ROOT_PATH = Path('../data/boneage-test-dataset')
+SAVE_PATH = Path('../data/processed/test-set')
 
 # load labels, get only ids and transform it numpy array
-training_labels = pd.read_csv('../data/boneage-training-dataset.csv')
+training_labels = pd.read_csv('../data/boneage-test-dataset.csv')
 image_ids = training_labels['id']
 image_ids = image_ids.to_numpy()
 
