@@ -1,15 +1,17 @@
 import pandas as pd
 from PIL import Image
 from pathlib import Path
+import sys
 
-ROOT_PATH = Path('../data/boneage-training-dataset')
-SAVE_PATH = Path('../data/processed/training-set')
+set_type = sys.argv[1]
+
+ROOT_PATH = Path(f'../data/boneage-{set_type}-dataset')
+SAVE_PATH = Path(f'../data/processed/{set_type}-set')
 
 # load labels, get only ids and transform it numpy array
-training_labels = pd.read_csv('../data/boneage-training-dataset.csv')
-image_ids = training_labels['id']
+labels = pd.read_csv(f'../data/boneage-{set_type}-dataset.csv')
+image_ids = labels['id'] if sys.argv[1] == 'training' else labels['Case ID']
 image_ids = image_ids.to_numpy()
-
 
 # loop through all ids and use them to load images one by one
 for img_id in image_ids:
