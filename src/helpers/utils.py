@@ -1,6 +1,7 @@
 from PIL import Image
 from torch.utils.data import Dataset
 import os
+import torch
 
 class CustomImageDataset(Dataset):
   def __init__(self, root_dir, labels, transform=None):
@@ -18,5 +19,6 @@ class CustomImageDataset(Dataset):
     image = Image.open(img_path)
     if self.transform:
       image = self.transform(image)
-    print(img_id, age, gender)
+    age = torch.tensor(age, dtype=torch.float32)
+
     return image, age, gender, img_id
