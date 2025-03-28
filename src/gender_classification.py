@@ -6,7 +6,7 @@ from torchvision import transforms
 
 import pandas as pd
 
-from helpers.utils import CustomImageDataset
+from helpers.utils import CustomImageDatasetForGender
 
 class GenderCNN(nn.Module):
     def __init__(self):
@@ -59,13 +59,9 @@ transform = transforms.Compose([
 
 csv_file = "data/boneage-training-dataset.csv"
 img_dir = "data/processed/training-set"
-
-dataset = CustomImageDataset(root_dir = img_dir, labels = pd.read_csv(csv_file), transform = transform)
+dataset = CustomImageDatasetForGender(root_dir = img_dir, labels = pd.read_csv(csv_file), transform = transform)
 subset_dataset = Subset(dataset, range(600)) # Take only 600 data for now
-
 dataloader = DataLoader(dataset, batch_size = 32, shuffle = True)
-#dataloader = DataLoader(subset_dataset, batch_size = 32, shuffle = True)
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = GenderCNN().to(device)
 print("Model architecture:")
@@ -110,11 +106,17 @@ print("Finished Training")
 total_correct = 0
 total_samples = 0
 
+test_csv = "data/boneage-test-dataset.csv"
+test_img_dir = "data/processed/test-set"
+test_dataset = CustomImageDatasetForGender(root_dir = test_img_dir, labels = pd.read_csv(test_csv), transform = transform)
+test_dataloader = DataLoader(test_dataset, batch_size = 32, shuffle = False)
+
 model.eval()
 with torch.no_grad():
-    for batch in dataloader:
-        images, _ , genders, img_ids = batch # Ignore age
+    for batch in test_dataloader:
+        images, genders, img_ids = batch # Ignore age
         images = images.to(device)
+        genders = genders.long().to(device)
 
         outputs = model(images)
         # Apply Softmax to convert logits to probabilities (for each class)
@@ -122,9 +124,9 @@ with torch.no_grad():
         # Get predicted class by finding the index with maximum probability (Male 1 or Female 0)
         preds = torch.argmax(probs, dim = 1)
 
-        genders_int = genders.long() # False -> 0, True -> 1
+        # genders_int = genders.long() # False -> 0, True -> 1
 
-        correct = (preds.cpu() == genders_int).sum().item()
+        correct = (preds.cpu() == genders).sum().item()
         total_correct += correct
         total_samples += images.size(0)
 
