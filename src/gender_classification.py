@@ -12,27 +12,56 @@ class GenderCNN(nn.Module):
     def __init__(self):
         super(GenderCNN, self).__init__()
         self.conv_layers = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size = 3, stride = 1, padding = 1),
-            nn.BatchNorm2d(16), 
+            # nn.Conv2d(1, 32, kernel_size = 3, stride = 1, padding = 1),
+            # nn.BatchNorm2d(32), 
+            # nn.ReLU(),
+            # nn.MaxPool2d(2), # 256x344 -> 128x172
+
+            # nn.Conv2d(32, 64, kernel_size = 3, stride = 1, padding = 1),
+            # nn.BatchNorm2d(64),
+            # nn.ReLU(),
+            # nn.MaxPool2d(2), # 128x172 -> 64x86
+
+            # nn.Conv2d(64, 128, kernel_size = 3, stride = 1, padding = 1),
+            # nn.BatchNorm2d(128),
+            # nn.ReLU(),
+            # nn.MaxPool2d(2), # 64x86 -> 32x43
+
+            # nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
+            # nn.BatchNorm2d(256),
+            # nn.ReLU(),
+            # nn.MaxPool2d(2),
+            nn.Conv2d(1, 8, kernel_size = 3, stride = 1, padding = 1),
+            nn.BatchNorm2d(8), 
             nn.ReLU(),
             nn.MaxPool2d(2), # 256x344 -> 128x172
 
-            nn.Conv2d(16, 32, kernel_size = 3, stride = 1, padding = 1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(8, 16, kernel_size = 3, stride = 1, padding = 1),
+            nn.BatchNorm2d(16),
             nn.ReLU(),
             nn.MaxPool2d(2), # 128x172 -> 64x86
 
-            nn.Conv2d(32, 64, kernel_size = 3, stride = 1, padding = 1),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(16, 24, kernel_size = 3, stride = 1, padding = 1),
+            nn.BatchNorm2d(24),
             nn.ReLU(),
             nn.MaxPool2d(2), # 64x86 -> 32x43
+
+            nn.Conv2d(24, 32, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
         )
 
         self.fc_layers = nn.Sequential(
+            # nn.Flatten(),
+            # nn.Linear(256 * 16 * 21, 512),
+            # nn.ReLU(),
+            # nn.Dropout(0.5),
+            # nn.Linear(512, 2) # 0: female, 1: male
             nn.Flatten(),
-            nn.Linear(64 * 32 * 43, 128),
+            nn.Linear(44032, 512),
             nn.ReLU(),
-            nn.Linear(128, 2) # 0: female, 1: male
+            nn.Dropout(0.5),
+            nn.Linear(512, 2) # 0: female, 1: male
         )
 
     def forward(self, x):
@@ -61,7 +90,8 @@ csv_file = "data/boneage-training-dataset.csv"
 img_dir = "data/processed/training-set"
 dataset = CustomImageDatasetForGender(root_dir = img_dir, labels = pd.read_csv(csv_file), transform = transform)
 subset_dataset = Subset(dataset, range(600)) # Take only 600 data for now
-dataloader = DataLoader(dataset, batch_size = 32, shuffle = True)
+# dataloader = DataLoader(dataset, batch_size = 32, shuffle = True)
+dataloader = DataLoader(subset_dataset, batch_size = 32, shuffle = True)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = GenderCNN().to(device)
 print("Model architecture:")
@@ -69,9 +99,10 @@ print(model)
 
 # Train model
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.parameters(), lr = 0.001, momentum = 0.9)
+#optimizer = optim.SGD(model.parameters(), lr = 0.001, momentum = 0.9)
+optimizer = optim.Adam(model.parameters(), lr = 0.001)
 
-num_epochs = 10
+num_epochs = 50
 for epoch in range(num_epochs):
     model.train()
     running_loss = 0.0
@@ -93,14 +124,13 @@ for epoch in range(num_epochs):
         running_loss += loss.item() * images.size(0)
         total_samples += images.size(0)
 
-        if i % 200 == 199:
+        if i % 10 == 9:
             avg_loss = running_loss / total_samples
             print(f"[Epoch {epoch + 1}, Batch {i + 1}] loss: {avg_loss:.4f}")
             running_loss = 0.0
             total_samples = 0
 
 print("Finished Training")
-
 
 # Evaluate model
 total_correct = 0
@@ -124,7 +154,8 @@ with torch.no_grad():
         # Get predicted class by finding the index with maximum probability (Male 1 or Female 0)
         preds = torch.argmax(probs, dim = 1)
 
-        # genders_int = genders.long() # False -> 0, True -> 1
+        # genders_int = genders.long()
+        # False -> 0, True -> 1
 
         correct = (preds.cpu() == genders).sum().item()
         total_correct += correct

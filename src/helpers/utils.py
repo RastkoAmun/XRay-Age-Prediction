@@ -43,9 +43,9 @@ class CustomImageDatasetForGender(Dataset):
         image = Image.open(img_path)
         if self.transform:
             image = self.transform(image)
-        print(img_id, age, gender)
+        # print(img_id, age, gender)
         return image, age, gender, img_id
-    # without age (for testing)
+    # without age (for testing)s
     elif len(row) == 2:
         img_id, gender = row
         img_path = os.path.join(self.root_dir, str(img_id) + '.png')
@@ -54,7 +54,7 @@ class CustomImageDatasetForGender(Dataset):
             image = self.transform(image)
         gender_val = 1 if gender in ['M', 'Male', True] else 0
         gender = torch.tensor(gender_val)
-        print(img_id, gender.item())
+        # print(img_id, gender.item())
         return image, gender, img_id
     else:
         raise ValueError(f"Unexpected number of columns: {len(row)}")
