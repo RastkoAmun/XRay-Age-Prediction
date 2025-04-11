@@ -1,174 +1,272 @@
-import torch
-import torch.optim as optim
-from torch import nn
-from torch.utils.data import DataLoader, Subset
-from torchvision import transforms
-
 import pandas as pd
+import torch
+from torch.utils.data import DataLoader, WeightedRandomSampler
+import torchvision.transforms as transforms
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+from sklearn.metrics import classification_report, f1_score, confusion_matrix
+from sklearn.model_selection import train_test_split
+from collections import Counter
+import numpy as np
+from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.pyplot as plt
 
 from helpers.utils import CustomImageDatasetForGender
 
-class GenderCNN(nn.Module):
+
+def evaluate_model(model, dataloader, device):
+    # Evaluate the model, print classification report, return F1 score
+    model.eval()
+    all_preds = []
+    all_labels = []
+
+    with torch.no_grad():
+        for images, _, genders, _ in dataloader:
+            images = images.to(device)
+            labels = genders.cpu().numpy()
+            outputs = model(images)
+            preds = torch.argmax(outputs, dim=1).cpu().numpy()
+
+            all_preds.extend(preds)
+            all_labels.extend(labels)
+
+    print(classification_report(all_labels, all_preds, target_names=["Female", "Male"]))
+    print("Predicted class counts:", Counter(all_preds))
+
+    macro_f1 = f1_score(all_labels, all_preds, average='macro')
+    return macro_f1
+
+
+def calculate_training_accuracy(model, dataloader, device):
+    # Calculate training accuracy
+    model.eval()
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        for images, _, genders, _ in dataloader:
+            images = images.to(device)
+            labels = genders.to(device)
+
+            outputs = model(images)
+            #preds = (outputs > 0.5).cpu()
+            preds = torch.argmax(outputs, dim=1).cpu()
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
+
+    return correct / total
+
+
+class SimpleCNN(nn.Module):
     def __init__(self):
-        super(GenderCNN, self).__init__()
-        self.conv_layers = nn.Sequential(
-            # nn.Conv2d(1, 32, kernel_size = 3, stride = 1, padding = 1),
-            # nn.BatchNorm2d(32), 
-            # nn.ReLU(),
-            # nn.MaxPool2d(2), # 256x344 -> 128x172
-
-            # nn.Conv2d(32, 64, kernel_size = 3, stride = 1, padding = 1),
-            # nn.BatchNorm2d(64),
-            # nn.ReLU(),
-            # nn.MaxPool2d(2), # 128x172 -> 64x86
-
-            # nn.Conv2d(64, 128, kernel_size = 3, stride = 1, padding = 1),
-            # nn.BatchNorm2d(128),
-            # nn.ReLU(),
-            # nn.MaxPool2d(2), # 64x86 -> 32x43
-
-            # nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
-            # nn.BatchNorm2d(256),
-            # nn.ReLU(),
-            # nn.MaxPool2d(2),
-            nn.Conv2d(1, 8, kernel_size = 3, stride = 1, padding = 1),
-            nn.BatchNorm2d(8), 
+        super(SimpleCNN, self).__init__()
+        self.conv_block = nn.Sequential(
+            nn.Conv2d(1, 16, 3, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(2), # 256x344 -> 128x172
-
-            nn.Conv2d(8, 16, kernel_size = 3, stride = 1, padding = 1),
-            nn.BatchNorm2d(16),
+            nn.MaxPool2d(2),
+            nn.Conv2d(16, 32, 3, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(2), # 128x172 -> 64x86
-
-            nn.Conv2d(16, 24, kernel_size = 3, stride = 1, padding = 1),
-            nn.BatchNorm2d(24),
-            nn.ReLU(),
-            nn.MaxPool2d(2), # 64x86 -> 32x43
-
-            nn.Conv2d(24, 32, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
+            nn.MaxPool2d(2),
         )
-
-        self.fc_layers = nn.Sequential(
-            # nn.Flatten(),
-            # nn.Linear(256 * 16 * 21, 512),
-            # nn.ReLU(),
-            # nn.Dropout(0.5),
-            # nn.Linear(512, 2) # 0: female, 1: male
+        self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(44032, 512),
+            nn.Linear(32 * 86 * 64, 128),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(512, 2) # 0: female, 1: male
+            nn.Linear(128, 2)
         )
 
     def forward(self, x):
-        x = self.conv_layers(x)
-        x = self.fc_layers(x)
-        return x
-
-# Function to convert labels into "Male" or "Female"
-def label_to_str(label): 
-    if isinstance(label, int): # Convert 0 -> Female, 1 -> Male
-        return "Male" if label == 1 else "Female"
-    if torch.is_tensor(label): # If scalar -> good, if not get first element
-        val = label.item() if label.dim() == 0 else label[0].item()
-        return "Male" if val == 1 else "Female"
-    if isinstance(label, bool): # Convert False -> Female, True -> Male
-        return "Male" if label else "Female"
-    return str(label)
+        x = self.conv_block(x)
+        x = self.fc(x)
+        return x  # shape: (batch_size, 2)
 
 
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=1.0, gamma=2.0, weight=None, reduction='mean'):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.weight = weight
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        ce_loss = F.cross_entropy(inputs, targets, weight=self.weight, reduction='none')
+        pt = torch.exp(-ce_loss) 
+        focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
+
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
+
+
+def imshow(img, true_label, pred_label):
+    # Display the image with labels
+    img = img.numpy().transpose((1, 2, 0))
+    plt.imshow(img.squeeze(), cmap='gray')
+    plt.title(f"True: {'Female' if true_label==0 else 'Male'}\nPred: {'Female' if pred_label==0 else 'Male'}")
+    plt.axis('off')
+
+
+# Main
 transform = transforms.Compose([
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomRotation(10),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.5], std=[0.5])
 ])
 
 csv_file = "data/boneage-training-dataset.csv"
 img_dir = "data/processed/training-set"
-dataset = CustomImageDatasetForGender(root_dir = img_dir, labels = pd.read_csv(csv_file), transform = transform)
-subset_dataset = Subset(dataset, range(600)) # Take only 600 data for now
-# dataloader = DataLoader(dataset, batch_size = 32, shuffle = True)
-dataloader = DataLoader(subset_dataset, batch_size = 32, shuffle = True)
+df = pd.read_csv(csv_file)
+filtered_df = df[df['boneage'] >= 165].reset_index(drop=True) # Extract data above 165
+#Second_filtered_df = df[df['boneage'] >= 150].reset_index(drop=True)
+
+print(len(filtered_df))
+#print(len(Second_filtered_df))
+
+#sub_dataset = CustomImageDatasetForGender(root_dir=img_dir, labels=Second_filtered_df , transform=transform)
+sub_dataset = CustomImageDatasetForGender(root_dir=img_dir, labels=filtered_df, transform=transform)
+dataloader = DataLoader(sub_dataset, batch_size=4, shuffle=False)
+
+# splitting into training and testing dataset
+
+train_df, test_df = train_test_split(filtered_df, test_size=0.1, random_state=42)
+#train_df, test_df = train_test_split(Second_filtered_df, test_size=0.1, random_state=42)
+print("# of male training dataset")
+print(train_df['male'].value_counts())
+print("\n# of male in testing dataset")
+print(test_df['male'].value_counts())
+
+train_dataset = CustomImageDatasetForGender(root_dir=img_dir, labels=train_df, transform=transform)
+test_dataset = CustomImageDatasetForGender(root_dir=img_dir, labels=test_df, transform=transform)
+
+# Handle class imbalance
+gender_labels = [int(label) for _, _, label, _ in train_dataset]  # 0: Female, 1: Male
+class_counts = torch.bincount(torch.tensor(gender_labels, dtype=torch.long))
+class_weights = 1.0 / class_counts.float()
+sample_weights = [class_weights[label] for label in gender_labels]
+sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+
+train_loader = DataLoader(train_dataset, batch_size=32, sampler=sampler, shuffle=False)
+#train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = GenderCNN().to(device)
-print("Model architecture:")
-print(model)
+model = SimpleCNN().to(device)
 
-# Train model
-criterion = nn.CrossEntropyLoss()
-#optimizer = optim.SGD(model.parameters(), lr = 0.001, momentum = 0.9)
-optimizer = optim.Adam(model.parameters(), lr = 0.001)
+#num_male = 1487  # male=True
+#num_female = 464   # male=False
 
+best_combined_score = 0.0
+best_model_state = None
 num_epochs = 50
+
+class_weights = torch.tensor([1.2, 1.0], dtype=torch.float32).to(device)
+criterion = FocalLoss(gamma=1.0, weight=class_weights).to(device)
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+
 for epoch in range(num_epochs):
+    # Train the model
     model.train()
     running_loss = 0.0
-    total_samples = 0
 
-    for i, batch in enumerate(dataloader):
-        images, _, genders, _ = batch
+    for images, _, genders, _ in train_loader:
         images = images.to(device)
-        genders = genders.long().to(device)  # 0 or 1
+        labels = genders.long().to(device)
+        outputs = model(images)
+        loss = criterion(outputs, labels)
 
         optimizer.zero_grad()
-
-        outputs = model(images)
-        loss = criterion(outputs, genders)  # CrossEntropyLoss
-
         loss.backward()
         optimizer.step()
 
-        running_loss += loss.item() * images.size(0)
-        total_samples += images.size(0)
+        running_loss += loss.item()
 
-        if i % 10 == 9:
-            avg_loss = running_loss / total_samples
-            print(f"[Epoch {epoch + 1}, Batch {i + 1}] loss: {avg_loss:.4f}")
-            running_loss = 0.0
-            total_samples = 0
+    avg_loss = running_loss / len(train_loader)
+    train_acc = calculate_training_accuracy(model, train_loader, device)
+    test_acc = calculate_training_accuracy(model, test_loader, device)
 
-print("Finished Training")
+    print(f"Epoch {epoch+1}/{num_epochs} - Loss: {avg_loss:.4f} - Train Acc: {train_acc:.4f} - Test Acc: {test_acc:.4f}")
+    macro_f1 = evaluate_model(model, test_loader, device)
+    combined_score = (macro_f1 + test_acc) / 2
 
-# Evaluate model
-total_correct = 0
-total_samples = 0
+    if combined_score > best_combined_score:
+        best_combined_score = combined_score
+        best_model_state = model.state_dict()
+    
+    print(f"Macro F1-score: {macro_f1:.4f} | Combined Score: {combined_score:.4f}")
+    print("-" * 60)
 
-test_csv = "data/boneage-test-dataset.csv"
-test_img_dir = "data/processed/test-set"
-test_dataset = CustomImageDatasetForGender(root_dir = test_img_dir, labels = pd.read_csv(test_csv), transform = transform)
-test_dataloader = DataLoader(test_dataset, batch_size = 32, shuffle = False)
+if best_model_state is not None:
+    torch.save(best_model_state, "balanced_model.pt")
+    print(f"Best model saved with Combined Score: {best_combined_score:.4f}")
 
+
+model.load_state_dict(torch.load("balanced_model.pt"))
 model.eval()
+
+all_preds = []
+all_labels = []
+wrong_images = []
+wrong_preds = []
+wrong_true = []
+
 with torch.no_grad():
-    for batch in test_dataloader:
-        images, genders, img_ids = batch # Ignore age
+    for images, _, labels, _ in test_loader:
         images = images.to(device)
-        genders = genders.long().to(device)
+        labels = labels.to(device)
 
         outputs = model(images)
-        # Apply Softmax to convert logits to probabilities (for each class)
-        probs = nn.Softmax(dim = 1)(outputs)
-        # Get predicted class by finding the index with maximum probability (Male 1 or Female 0)
-        preds = torch.argmax(probs, dim = 1)
+        preds = torch.argmax(outputs, dim=1)
 
-        # genders_int = genders.long()
-        # False -> 0, True -> 1
+        all_preds.extend(preds.cpu().numpy())
+        all_labels.extend(labels.cpu().numpy().astype(int))
 
-        correct = (preds.cpu() == genders).sum().item()
-        total_correct += correct
-        total_samples += images.size(0)
+        for i in range(len(preds)):
+            # Collect misclassified
+            if preds[i] != labels[i]:
+                wrong_images.append(images[i].cpu())
+                wrong_preds.append(preds[i].item())
+                wrong_true.append(labels[i].item())
 
-        # Get the maximum probability for each sample in the batch
-        batch_pred_prob = probs.max(dim = 1)[0]
+cm = confusion_matrix(all_labels, all_preds, labels=[0, 1])
+tn, fp, fn, tp = cm.ravel()
+#print (tn)
+#print (fp)
+#print (fn)
+#print (tp)
 
-        pred_labels = [label_to_str(p) for p in preds]
-        true_labels = [label_to_str(g) for g in genders]
-        print("Batch Predictions:", pred_labels)
-        print("Batch True genders:", true_labels)
-        print("Batch prediction probabilities:", batch_pred_prob.tolist())
+classes = ["Female", "Male"]
 
-    overall_accuracy = total_correct / total_samples * 100
-    print(f"Overall accuracy on {total_samples} samples: {overall_accuracy:.2f}%")
+# Display confusion matrix
+steelblue_cmap = LinearSegmentedColormap.from_list("steelblue_map", ["#f0f8ff", "steelblue"])
+plt.figure(figsize=(6, 5))
+plt.imshow(cm, interpolation='nearest', cmap=steelblue_cmap)
+plt.title("Confusion Matrix")
+plt.colorbar()
+tick_marks = np.arange(len(classes))
+plt.xticks(tick_marks, classes)
+plt.yticks(tick_marks, classes)
+plt.xlabel("Predicted Label")
+plt.ylabel("True Label")
+
+thresh = cm.max() / 2.
+for i in range(cm.shape[0]):
+    for j in range(cm.shape[1]):
+        plt.text(j, i, format(cm[i, j], 'd'),
+                 ha="center", va="center",
+                 color="white" if cm[i, j] > thresh else "black")
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(15, 6))
+for i in range(min(10, len(wrong_images))):
+    plt.subplot(2, 5, i+1)
+    imshow(wrong_images[i], wrong_true[i], wrong_preds[i])
+plt.suptitle("Misclassified Test Images", fontsize=16, y=1.02)
+plt.tight_layout()
+plt.show()
