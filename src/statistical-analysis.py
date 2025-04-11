@@ -10,7 +10,7 @@ labels["error"] = abs(labels["real"] - labels["prediction"])
 
 # Scatter plot
 plt.figure(figsize=(8, 6))
-plt.scatter(labels["real"], labels["prediSSction"], alpha=0.4, c='steelblue')
+plt.scatter(labels["real"], labels["prediction"], alpha=0.4, c='steelblue')
 plt.plot([labels["real"].min(), labels["real"].max()], [labels["real"].min(), labels["real"].max()], 
           color='red', linestyle='-', label='Perfect Prediction')
 

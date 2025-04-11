@@ -18,7 +18,7 @@ The model applies modern computer vision techniques to streamline what is tradit
 
 
 ## Video/demo/GIF
-🎬 [Watch the Presentation Video](https://youtube.com/your-video-link)
+🎬 [Watch the Presentation Video](https://www.youtube.com/watch?v=qUDguB83JRQ)
 
 
 ## Table of Contents
@@ -34,14 +34,39 @@ The model applies modern computer vision techniques to streamline what is tradit
 <a name="demo"></a>
 ## 1. Example demo
 
-A minimal example to showcase your work
+This mini example demo shows the output of 5 x-ray images with best prediction.
+Screenshot below shows the plot.
 
 ```python
-from amazing import amazingexample
-imgs = amazingexample.demo()
-for img in imgs:
-    view(img)
+import pandas as pd
+import matplotlib.pyplot as plt
+from PIL import Image
+from pathlib import Path
+
+image_dir = Path("../data/processed/training-set")
+labels = pd.read_csv("../submission.csv")
+labels["error"] = abs(labels["real"] - labels["prediction"])
+
+df_sorted = labels.sort_values(by="error", ascending=False)
+
+fig, axes = plt.subplots(1, 5, figsize=(12, 4))
+    
+# Show top 5 best predictions
+for idx, row in enumerate(df_sorted.tail(5).itertuples()):
+	img_path = image_dir / f"{int(row.id)}.png"
+	image = Image.open(img_path).convert("L")
+
+	axes[idx].imshow(image, cmap='gray')
+	axes[idx].axis("off")
+	axes[idx].set_title(f"ID:{row.id}\nReal: {int(row.real)}\nPred: {int(row.prediction)}")
+
+plt.suptitle("Top 5 Best Predictions", y=1.05)
+plt.tight_layout()
+plt.show()
+plt.close(fig)
 ```
+Output of the results:
+![alt text](image.png)
 
 ### What to find where
 
@@ -98,24 +123,15 @@ Getting Data:
 Original Data is too large and it takes a lot of time for pre-processing. So we provided already processed data that is only 300 MB in size. The .zip file also contains the csv file with training labels. Download data on the following link:
 https://drive.google.com/file/d/1A-cas09uyZFP2XduVxvxr9A-7-ymrFlg/view?usp=sharing
 
-After you download the data, unzip the folder and paste it in /src folder from repository
+After you download the data, unzip the folder and paste it in /src folder from repository. Please double-check previous section on Project Architecture to make sure data and other files are organized as shown there. 
 
 Reproduction
 ```bash
 
-cd src/data
-unzip boneage-dataset.zip
-cd ../
-python preprocessing/preprocessing.py train
-python preprocessing/preprocessing.py test
-
-python model-building.ipynb
-
-python gender_classification.ipynb
-
-python statistical-analysis.ipynb
-
-python src/amazing/amazingexample.py
+cd src
+python3 model-building.py           # MAIN model
+python3 gender_classification.py    # model for a side project
+python3 statistical-analysis.py     # script for statistical analysis
 
 ```
 The model training produces a submission.csv in the source folder.
