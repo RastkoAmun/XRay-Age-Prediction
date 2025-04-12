@@ -110,7 +110,7 @@ Cloning and Dependencies Installation
 # Clone the repository (choose HTTPS or SSH)
 git clone https://github.com/sfu-cmpt419/2025_1_project_18.git
 # or
-git git@github.com:sfu-cmpt419/2025_1_project_18.git
+git clone git@github.com:sfu-cmpt419/2025_1_project_18.git
 cd 2025_1_project_18
 
 # Create a virtual environment and install dependencies
